@@ -9,8 +9,13 @@ import {
   ScrollView,
   ActivityIndicator,
   TextInput,
+  Button,
 } from 'react-native';
+import { StripeProvider } from '@stripe/stripe-react-native';
+import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import { useStripe } from '@stripe/stripe-react-native';
 
+import { PermissionsAndroid, Platform } from 'react-native';
 import {launchImageLibrary} from 'react-native-image-picker';
 import TextRecognition from '@react-native-ml-kit/text-recognition';
 export default function App() {
@@ -22,7 +27,8 @@ export default function App() {
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [declaration, setDeclaration] = useState('');
   const [reference, setReference] = useState('');
-
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const [clientSecret, setClientSecret] = useState(null);
   const pickImageFromGallery = async () => {
     const options = {mediaType: 'photo', quality: 1};
     launchImageLibrary(options, async response => {
@@ -35,19 +41,26 @@ export default function App() {
         setImageUri(imagePath);
         setRecognizedText('');
         setEnhancedText('');
-        recognizeText(imagePath);
+        await recognizeText(imagePath);  // Wait for text recognition to finish
       }
     });
-   await enhanceTextWithOpenAI();
-  }; 
+  };
+  
+  // Only run when recognizedText is updated
   useEffect(() => {
     if (recognizedText) {
       enhanceTextWithOpenAI();
-      setShowform(!showform);
-      extractDetails(enhancedText);
-      console.log('Enhanced Text', enhancedText);
     }
   }, [recognizedText]);
+  
+  // Only run when enhancedText is updated
+  useEffect(() => {
+    if (enhancedText) {
+      extractDetails(enhancedText);
+      setShowform(false);
+    }
+  }, [enhancedText]);
+  
   const recognizeText = async imagePath => {
     try {
       setIsLoading(true);
@@ -59,6 +72,60 @@ export default function App() {
       setIsLoading(false);
     }
   };
+  const testServer = async () => {
+    try {
+      const response = await fetch('http://10.54.5.240:3000/test');
+      const data = await response.json();
+      console.log("Test Server Response:", data);
+    } catch (error) {
+      console.error("Error testing server:", error);
+    }
+  };
+  testServer()
+  const fetchPaymentIntent = async () => {
+    console.log("Fetching payment intent");
+    try {
+      const response = await fetch('http://10.0.2.2:3000/payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+  
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+  
+      const data = await response.json();
+      console.log("Payment Intent Data:", data);
+      setClientSecret(data.clientSecret);
+    } catch (error) {
+      console.error("Error fetching payment intent:", error);
+      Alert.alert("Error", "Failed to fetch payment intent");
+    }
+  };
+  const initializePaymentSheet = async () => {
+    await fetchPaymentIntent();
+    if (!clientSecret) return;
+
+    const { error } = await initPaymentSheet({
+      paymentIntentClientSecret: clientSecret,
+    });
+
+    if (!error) {
+      openPaymentSheet();
+    }
+  };
+
+  const openPaymentSheet = async () => {
+    const { error } = await presentPaymentSheet();
+
+    if (error) {
+      Alert.alert(`Error: ${error.code}`, error.message);
+    } else {
+      Alert.alert("Success", "Payment successful!");
+    }
+  };
+
+
   const extractDetails = text => {
     console.log("Here is text",text)
     const texte = text;
@@ -118,9 +185,55 @@ export default function App() {
       setIsEnhancing(false);
     }
   };
+  const ExportPDF = () => {
+    const requestStoragePermission = async () => {
+      if (Platform.OS === 'android') {
+        try {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+            {
+              title: 'Storage Permission',
+              message: 'This app needs access to your storage to save the PDF.',
+              buttonNeutral: 'Ask Me Later',
+              buttonNegative: 'Cancel',
+              buttonPositive: 'OK',
+            }
+          );
+          return granted === PermissionsAndroid.RESULTS.GRANTED;
+        } catch (err) {
+          console.warn(err);
+          return false;
+        }
+      }
+      return true;
+    }}
+    const createPDF = async () => {
+      console.log("Pressing")
 
+  
+      let options = {
+        html: `
+          <h1 style="text-align: center;">Tax Form</h1>
+          <p>Code Declaration: <b>${declaration}</b></p>
+          <p>Code Referenec: <b>${reference}</b></p>
+          
+        `,
+        fileName: 'sample_pdf',
+        directory: 'Download',
+      };
+  
+      try {
+        let file = await RNHTMLtoPDF.convert(options);
+        Alert.alert('Success', `PDF saved to: ${file.filePath}`);
+        console.log('PDF File Path:', file.filePath);
+      } catch (error) {
+        console.error('Error creating PDF:', error);
+      }
+    };
   return (
+    <StripeProvider publishableKey="pk_test_51PCo4FSFzJ2llaTnYzjN7JzvhiAVEKHw1zTWij1GMEeU9FNsvQoQVTMEcl7N3LlRyAUaEPnHaq1AHf8sqcWsXGUD009EUdNudv">
     <View style={styles.container}>
+   
       <ScrollView style={styles.scroll}>
         <Text style={styles.heading}>GeTax</Text>
         <View style={styles.contentBox}>
@@ -142,7 +255,7 @@ export default function App() {
               />
 
               <TouchableOpacity style={styles.button}>
-                <Text style={styles.buttonText}>Download Form</Text>
+                <Text style={styles.buttonText} onPress={createPDF}>Download Form</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -197,17 +310,24 @@ export default function App() {
                   </TouchableOpacity>
                 </>
               ) : (
+                <View>
                 <TouchableOpacity
                   style={styles.button}
                   onPress={pickImageFromGallery}>
-                  <Text style={styles.buttonText}>Pick Image from Gallery</Text>
+                  <Text style={styles.buttonText}>Pick Image</Text>
                 </TouchableOpacity>
+                <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <Button title="Pay Now" onPress={initializePaymentSheet} />
+    </View>
+       
+</View>
               )}
             </View>
           )}
         </View>
       </ScrollView>
     </View>
+    </StripeProvider>
   );
 }
 
