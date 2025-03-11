@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,14 +9,10 @@ import {
   ScrollView,
   ActivityIndicator,
   TextInput,
-  Button,
 } from 'react-native';
-import { StripeProvider } from '@stripe/stripe-react-native';
-import RNHTMLtoPDF from 'react-native-html-to-pdf';
-import { useStripe } from '@stripe/stripe-react-native';
 
-import { PermissionsAndroid, Platform } from 'react-native';
-import {launchImageLibrary} from 'react-native-image-picker';
+import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import { launchImageLibrary } from 'react-native-image-picker';
 import TextRecognition from '@react-native-ml-kit/text-recognition';
 export default function App() {
   const [showform, setShowform] = useState(true);
@@ -27,11 +23,12 @@ export default function App() {
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [declaration, setDeclaration] = useState('');
   const [reference, setReference] = useState('');
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
-  const [clientSecret, setClientSecret] = useState(null);
+const [period,setPeriod] = useState('');
+const [postalcode,setpostalcode] = useState('');
+const [phone,setPhone] = useState('');
   const pickImageFromGallery = async () => {
-    const options = {mediaType: 'photo', quality: 1};
-    launchImageLibrary(options, async response => {
+    const options = { mediaType: 'photo', quality: 1 };
+    launchImageLibrary(options, async (response) => {
       if (response.didCancel) {
         Alert.alert('Cancelled', 'Image selection was cancelled.');
       } else if (response.errorMessage) {
@@ -41,18 +38,18 @@ export default function App() {
         setImageUri(imagePath);
         setRecognizedText('');
         setEnhancedText('');
-        await recognizeText(imagePath);  // Wait for text recognition to finish
+        await recognizeText(imagePath); // Wait for text recognition to finish
       }
     });
   };
-  
+
   // Only run when recognizedText is updated
   useEffect(() => {
     if (recognizedText) {
       enhanceTextWithOpenAI();
     }
   }, [recognizedText]);
-  
+
   // Only run when enhancedText is updated
   useEffect(() => {
     if (enhancedText) {
@@ -60,8 +57,8 @@ export default function App() {
       setShowform(false);
     }
   }, [enhancedText]);
-  
-  const recognizeText = async imagePath => {
+
+  const recognizeText = async (imagePath) => {
     try {
       setIsLoading(true);
       const result = await TextRecognition.recognize(imagePath);
@@ -72,170 +69,123 @@ export default function App() {
       setIsLoading(false);
     }
   };
-  const testServer = async () => {
-    try {
-      const response = await fetch('http://10.54.5.240:3000/test');
-      const data = await response.json();
-      console.log("Test Server Response:", data);
-    } catch (error) {
-      console.error("Error testing server:", error);
-    }
-  };
-  testServer()
-  const fetchPaymentIntent = async () => {
-    console.log("Fetching payment intent");
-    try {
-      const response = await fetch('http://10.0.2.2:3000/payment-intent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
+
+  const extractDetails = (text) => {
+    console.log("Here is text", text);
   
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+    let declaration = null;
+    let reference = null;
   
-      const data = await response.json();
-      console.log("Payment Intent Data:", data);
-      setClientSecret(data.clientSecret);
-    } catch (error) {
-      console.error("Error fetching payment intent:", error);
-      Alert.alert("Error", "Failed to fetch payment intent");
+    // Find "Code déclaration:"
+    let declStart = text.indexOf("Code déclaration:");
+    if (declStart !== -1) {
+      declStart += "Code déclaration:".length; // Move to the end of the phrase
+      let declEnd = text.indexOf("\n", declStart); // Find the end of the line
+      if (declEnd === -1) declEnd = text.length; // If no newline, take till end
+      declaration = text.slice(declStart, declEnd).trim(); // Extract the value
     }
-  };
-  const initializePaymentSheet = async () => {
-    await fetchPaymentIntent();
-    if (!clientSecret) return;
-
-    const { error } = await initPaymentSheet({
-      paymentIntentClientSecret: clientSecret,
-    });
-
-    if (!error) {
-      openPaymentSheet();
+  
+    // Find "Référence:"
+    let refStart = text.indexOf("Référence:");
+    if (refStart !== -1) {
+      refStart += "Référence:".length;
+      let refEnd = text.indexOf("\n", refStart);
+      if (refEnd === -1) refEnd = text.length;
+      reference = text.slice(refStart, refEnd).trim();
     }
+  
+    console.log(declaration);
+    console.log("--");
+    console.log(reference);
+  
+    if (declaration) setDeclaration(declaration);
+    if (reference) setReference(reference);
   };
-
-  const openPaymentSheet = async () => {
-    const { error } = await presentPaymentSheet();
-
-    if (error) {
-      Alert.alert(`Error: ${error.code}`, error.message);
-    } else {
-      Alert.alert("Success", "Payment successful!");
-    }
-  };
-
-
-  const extractDetails = text => {
-    console.log("Here is text",text)
-    const texte = text;
-    const parts = texte
-      .split(/Code déclaration: |Référence numéro: /)
-      .slice(1)
-      .map(part => part.trim());
-
-    const declarationMatch = parts[0];
-    const referenceMatch = parts[1];
-
-
-    if (declarationMatch) setDeclaration(declarationMatch);
-    if (referenceMatch) setReference(referenceMatch);
-  };
+  
+  
 
   const enhanceTextWithOpenAI = async () => {
     try {
-      console.log("Tryign")
+      console.log('Trying');
       if (!recognizedText) {
         Alert.alert('Error', 'No text to enhance.');
         return;
       }
 
       setIsEnhancing(true);
-      const apiKey =
-        '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'; // Replace with your OpenAI API Key
+      const apiKey = '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'; // Replace with your OpenAI API Key
 
-      const response = await fetch(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          method: 'POST',
-          headers: {  
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-3.5-turbo',
-            messages: [
-              {
-                role: 'system',
-                content: 'return the code declaration and refernec number',
-              },
-              {role: 'user', content: recognizedText},
-            ],
-          }),
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
         },
-      );
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content: 'return the code declaration and reference number',
+            },
+            { role: 'user', content: recognizedText },
+          ],
+        }),
+      });
 
       const data = await response.json();
-      setEnhancedText(
-        data.choices?.[0]?.message?.content || 'Enhancement failed.',
-      );
+      setEnhancedText(data.choices?.[0]?.message?.content || 'Enhancement failed.');
     } catch (error) {
       Alert.alert('Error', 'Failed to enhance text.');
-    } finally { 
+    } finally {
       setIsEnhancing(false);
     }
   };
-  const ExportPDF = () => {
-    const requestStoragePermission = async () => {
-      if (Platform.OS === 'android') {
-        try {
-          const granted = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-            {
-              title: 'Storage Permission',
-              message: 'This app needs access to your storage to save the PDF.',
-              buttonNeutral: 'Ask Me Later',
-              buttonNegative: 'Cancel',
-              buttonPositive: 'OK',
-            }
-          );
-          return granted === PermissionsAndroid.RESULTS.GRANTED;
-        } catch (err) {
-          console.warn(err);
-          return false;
-        }
-      }
-      return true;
-    }}
-    const createPDF = async () => {
-      console.log("Pressing")
 
-  
-      let options = {
-        html: `
-          <h1 style="text-align: center;">Tax Form</h1>
-          <p>Code Declaration: <b>${declaration}</b></p>
-          <p>Code Referenec: <b>${reference}</b></p>
-          
-        `,
-        fileName: 'sample_pdf',
-        directory: 'Download',
-      };
-  
-      try {
-        let file = await RNHTMLtoPDF.convert(options);
-        Alert.alert('Success', `PDF saved to: ${file.filePath}`);
-        console.log('PDF File Path:', file.filePath);
-      } catch (error) {
-        console.error('Error creating PDF:', error);
-      }
+  const createPDF = async () => {
+    console.log('Pressing');
+
+    let options = {
+      html: `
+        <h1 style="text-align: center;">Tax Form</h1>
+        <p>Code Declaration: <b>${declaration}</b></p>
+        <p>Code Reference: <b>${reference}</b></p>
+        <p>Tax Period: <b>${period}</b></p>
+        <p>Phone no: <b>${phone}</b></p>
+        <p>Postal code: <b>${postalcode}</b></p>
+      `,
+      fileName: 'Tax_form',
+      directory: 'Download',
     };
+
+    try {
+      let file = await RNHTMLtoPDF.convert(options);
+      Alert.alert('File Downloaded!', `PDF saved to: ${file.filePath}`);
+      console.log('PDF File Path:', file.filePath);
+    } catch (error) {
+      console.error('Error creating PDF:', error);
+    }
+  };
+
+  const goBack = () => {
+    setShowform(true); // Go back to the image selection and text recognition section
+    setImageUri(null); // Reset the image
+    setRecognizedText(''); // Reset recognized text
+    setEnhancedText(''); // Reset enhanced text
+    setDeclaration(''); // Reset declaration
+    setReference(''); // Reset reference
+  };
+
   return (
-    <StripeProvider publishableKey="pk_test_51PCo4FSFzJ2llaTnYzjN7JzvhiAVEKHw1zTWij1GMEeU9FNsvQoQVTMEcl7N3LlRyAUaEPnHaq1AHf8sqcWsXGUD009EUdNudv">
     <View style={styles.container}>
-   
       <ScrollView style={styles.scroll}>
         <Text style={styles.heading}>GeTax</Text>
+        {/* Go Back Button */}
+        {!showform && (
+          <TouchableOpacity style={styles.goBackButton} onPress={goBack}>
+            <Text style={styles.goBackButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        )}
         <View style={styles.contentBox}>
           {!showform && (
             <View>
@@ -245,6 +195,7 @@ export default function App() {
                 style={styles.input}
                 placeholder="Reference Number..."
                 placeholderTextColor="gray"
+                onChangeText={(text) => setReference(text)} // Allow editing
               />
               <Text style={styles.label}>Code Declaration:</Text>
               <TextInput
@@ -252,10 +203,39 @@ export default function App() {
                 style={styles.input}
                 placeholder="Code Declaration..."
                 placeholderTextColor="gray"
+                onChangeText={(text) => setDeclaration(text)} // Allow editing
+              />
+              <Text style={styles.label}>Phone no:</Text>
+              <TextInput
+                value={phone}
+                style={styles.input}
+                placeholder="+33 X XX XX XX XX"
+                placeholderTextColor="gray"
+                keyboardType='number-pad'
+                onChangeText={(text) => setPhone(text)} // Allow editing
+              />
+           
+              <Text style={styles.label}>Tax Period</Text>
+              <TextInput
+                value={period}
+                style={styles.input}
+                placeholder="2025"
+                placeholderTextColor="gray"
+                keyboardType='number-pad'
+                onChangeText={(text) => setPeriod(text)} // Allow editing
+              />
+              <Text style={styles.label}>Postal Code</Text>
+              <TextInput
+                value={postalcode}
+                style={styles.input}
+                placeholder="XXXXX"
+                placeholderTextColor="gray"
+                keyboardType='number-pad'
+                onChangeText={(text) => setpostalcode(text)} // Allow editing
               />
 
-              <TouchableOpacity style={styles.button}>
-                <Text style={styles.buttonText} onPress={createPDF}>Download Form</Text>
+              <TouchableOpacity style={styles.button} onPress={createPDF}>
+                <Text style={styles.buttonText}>  Download Form</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -263,71 +243,53 @@ export default function App() {
             <View>
               {imageUri ? (
                 <>
-                  <Image source={{uri: imageUri}} style={styles.image} />
+                  <Image source={{ uri: imageUri }} style={styles.image} />
 
-                  {isLoading ? (
+                  {/* {isLoading ? (
                     <ActivityIndicator size="large" color="white" />
                   ) : (
                     <>
-                      <Text style={styles.textRecognized}>
-                        Recognized Text:{' '}
-                      </Text>
-                      <Text style={styles.text}>
-                        {' '}
-                        {recognizedText || 'No text recognized'}
-                      </Text>
+                      <Text style={styles.textRecognized}>Recognized Text: </Text>
+                      <Text style={styles.text}> {recognizedText || 'No text recognized'}</Text>
                     </>
-                  )}
+                  )} */}
 
                   {recognizedText ? (
                     <>
                       <TouchableOpacity
                         style={styles.button}
                         onPress={enhanceTextWithOpenAI}
-                        disabled={isEnhancing}>
+                        disabled={isEnhancing}
+                      >
                         {isEnhancing ? (
                           <ActivityIndicator size="small" color="white" />
                         ) : (
-                          <Text style={styles.buttonText}>
-                            Extraction Information
-                          </Text>
+                          <Text style={styles.buttonText}>Extraction Information</Text>
                         )}
                       </TouchableOpacity>
 
                       {enhancedText ? (
-                        <Text style={styles.text}>
-                          Enhanced Text:
-                          {enhancedText}
-                        </Text>
+                        <Text style={styles.text}>Enhanced Text: {enhancedText}</Text>
                       ) : null}
                     </>
                   ) : null}
 
-                  <TouchableOpacity
-                    style={styles.button}
-                    onPress={() => setImageUri(null)}>
+                  <TouchableOpacity style={styles.button} onPress={() => setImageUri(null)}>
                     <Text style={styles.buttonText}>Choose Another Image</Text>
                   </TouchableOpacity>
                 </>
               ) : (
                 <View>
-                <TouchableOpacity
-                  style={styles.button}
-                  onPress={pickImageFromGallery}>
-                  <Text style={styles.buttonText}>Pick Image</Text>
-                </TouchableOpacity>
-                <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-      <Button title="Pay Now" onPress={initializePaymentSheet} />
-    </View>
-       
-</View>
+                  <TouchableOpacity style={styles.button} onPress={pickImageFromGallery}>
+                    <Text style={styles.buttonText}>Choose Image</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           )}
         </View>
       </ScrollView>
     </View>
-    </StripeProvider>
   );
 }
 
@@ -347,11 +309,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
   },
   image: {
-    width: 300,
+    width: 270,
     height: 300,
     marginBottom: 20,
     alignSelf: 'center',
-    borderRadius: 10,
+    borderRadius: 5,
   },
   textRecognized: {
     fontSize: 20,
@@ -393,5 +355,17 @@ const styles = StyleSheet.create({
     marginBottom: 3,
     paddingLeft: 5,
   },
+  goBackButton: {
+    backgroundColor: '#64748B',
+    padding: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 10,
+  },
+  goBackButtonText: {
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });
-
